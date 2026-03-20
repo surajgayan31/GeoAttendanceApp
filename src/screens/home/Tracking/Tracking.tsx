@@ -23,7 +23,7 @@ const OFFICE_LOCATION = {
   longitude: 75.80971,
 };
 
-const API_KEY = 'AIzaSyDk7HXk170Nm7NhhS2F8rbirdowYBQT5Vk';
+const API_KEY = 'ADD_YOUR_GOOGLE_MAPS_API_KEY_HERE';
 
 type LatLng = {
   latitude: number;

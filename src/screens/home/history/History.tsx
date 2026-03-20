@@ -26,7 +26,7 @@ type AttendanceRecord = {
 const STORAGE_KEY = 'attendance';
 
 // 🔥 Apna Google API key daalna
-const GOOGLE_API_KEY = 'AIzaSyDk7HXk170Nm7NhhS2F8rbirdowYBQT5Vk';
+const GOOGLE_API_KEY = 'ADD_YOUR_GOOGLE_MAPS_API_KEY_HERE';
 
 const History = () => {
   const [records, setRecords] = useState<AttendanceRecord[]>([]);

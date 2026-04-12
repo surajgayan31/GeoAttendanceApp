@@ -28,7 +28,7 @@ const OFFICE_LOCATION = {
   longitude: 75.80971,
 };
 
-const API_KEY = 'AIzaSyDk7HXk170Nm7NhhS2F8rbirdowYBQT5Vk';
+const API_KEY = 'ADD_YOUR_API_KEY_HERE';
 const MAP_REGION_DELTA = {
   latitudeDelta: 0.01,
   longitudeDelta: 0.01,

@@ -17,7 +17,7 @@
       <!-- ✅ API KEY YAHA DALNI HAI -->
       <meta-data
         android:name="com.google.android.geo.API_KEY"
-        android:value="AIzaSyDk7HXk170Nm7NhhS2F8rbirdowYBQT5Vk"/>
+        android:value="ADD_YOUR_API_KEY_HERE"/>
 
       <activity
         android:name=".MainActivity"

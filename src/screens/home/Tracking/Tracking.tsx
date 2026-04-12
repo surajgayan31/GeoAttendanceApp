@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -8,7 +8,12 @@ import {
   Platform,
   Linking,
 } from 'react-native';
-import MapView, { Marker, Circle, Polyline } from 'react-native-maps';
+import MapView, {
+  Marker,
+  Circle,
+  Polyline,
+  PROVIDER_GOOGLE,
+} from 'react-native-maps';
 import Geolocation from '@react-native-community/geolocation';
 import { getDistance } from 'geolib';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -23,23 +28,109 @@ const OFFICE_LOCATION = {
   longitude: 75.80971,
 };
 
-const API_KEY = 'ADD_YOUR_GOOGLE_MAPS_API_KEY_HERE';
+const API_KEY = 'AIzaSyDk7HXk170Nm7NhhS2F8rbirdowYBQT5Vk';
+const MAP_REGION_DELTA = {
+  latitudeDelta: 0.01,
+  longitudeDelta: 0.01,
+};
+const ROUTE_REFRESH_DISTANCE_METERS = 20;
 
 type LatLng = {
   latitude: number;
   longitude: number;
 };
 
+type RouteData = {
+  coordinates: LatLng[];
+  distanceMeters: number;
+};
+
+/* eslint-disable no-bitwise */
+const decodePolyline = (t: string): LatLng[] => {
+  let points: LatLng[] = [];
+  let index = 0;
+  let lat = 0;
+  let lng = 0;
+
+  while (index < t.length) {
+    let b;
+    let shift = 0;
+    let result = 0;
+
+    do {
+      b = t.charCodeAt(index++) - 63;
+      result |= (b & 0x1f) << shift;
+      shift += 5;
+    } while (b >= 0x20);
+
+    let dlat = result & 1 ? ~(result >> 1) : result >> 1;
+    lat += dlat;
+
+    shift = 0;
+    result = 0;
+
+    do {
+      b = t.charCodeAt(index++) - 63;
+      result |= (b & 0x1f) << shift;
+      shift += 5;
+    } while (b >= 0x20);
+
+    let dlng = result & 1 ? ~(result >> 1) : result >> 1;
+    lng += dlng;
+
+    points.push({
+      latitude: lat / 1e5,
+      longitude: lng / 1e5,
+    });
+  }
+
+  return points;
+};
+/* eslint-enable no-bitwise */
+
+const fetchRoute = async (
+  origin: LatLng,
+  destination: LatLng,
+): Promise<RouteData> => {
+  const url = `https://maps.googleapis.com/maps/api/directions/json?origin=${origin.latitude},${origin.longitude}&destination=${destination.latitude},${destination.longitude}&mode=driving&alternatives=false&units=metric&departure_time=now&key=${API_KEY}`;
+  const res = await fetch(url);
+  const data = await res.json();
+
+  if (!data.routes?.length) {
+    return {
+      coordinates: [],
+      distanceMeters: 0,
+    };
+  }
+
+  const route = data.routes[0];
+  const distanceMeters =
+    route.legs?.reduce(
+      (total: number, leg: { distance?: { value?: number } }) =>
+        total + (leg.distance?.value ?? 0),
+      0,
+    ) ?? 0;
+
+  return {
+    coordinates: decodePolyline(route.overview_polyline.points),
+    distanceMeters,
+  };
+};
+
 const Tracking = () => {
+  const mapRef = useRef<MapView | null>(null);
+  const routeFetchInFlightRef = useRef(false);
+  const lastRouteOriginRef = useRef<LatLng | null>(null);
   const [location, setLocation] = useState<LatLng | null>(null);
   const [startLocation, setStartLocation] = useState<LatLng | null>(null);
   const [inside, setInside] = useState(false);
   const [distance, setDistance] = useState(0);
   const [routeCoords, setRouteCoords] = useState<LatLng[]>([]);
-  const [trackingPath, setTrackingPath] = useState<LatLng[]>([]);
+  const [, setTrackingPath] = useState<LatLng[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-const [totalDistance, setTotalDistance] = useState(0);
+  const [totalDistance, setTotalDistance] = useState(0);
+  const [mapReady, setMapReady] = useState(false);
   // 🔐 Permission
   const requestPermission = async () => {
     if (Platform.OS === 'android') {
@@ -102,13 +193,39 @@ const [totalDistance, setTotalDistance] = useState(0);
   return [userLoc];
 });
 
-          const dist = getDistance(userLoc, OFFICE_LOCATION);
-          setDistance(dist);
-          setInside(dist <= 100);
+          const officeDistance = getDistance(userLoc, OFFICE_LOCATION);
+          setInside(officeDistance <= 100);
 
-          // Load route once
-          if (routeCoords.length === 0) {
-            getRoute(userLoc, OFFICE_LOCATION);
+          if (!lastRouteOriginRef.current) {
+            setDistance(officeDistance);
+          }
+
+          const shouldRefreshRoute =
+            !lastRouteOriginRef.current ||
+            getDistance(lastRouteOriginRef.current, userLoc) >=
+              ROUTE_REFRESH_DISTANCE_METERS;
+
+          if (shouldRefreshRoute && !routeFetchInFlightRef.current) {
+            routeFetchInFlightRef.current = true;
+            fetchRoute(userLoc, OFFICE_LOCATION)
+              .then(route => {
+                if (route.coordinates.length > 0) {
+                  setRouteCoords(route.coordinates);
+                }
+
+                if (route.distanceMeters > 0) {
+                  setDistance(route.distanceMeters);
+                  lastRouteOriginRef.current = userLoc;
+                } else {
+                  setDistance(officeDistance);
+                }
+              })
+              .catch(e => {
+                console.log(e);
+              })
+              .finally(() => {
+                routeFetchInFlightRef.current = false;
+              });
           }
         },
         err => {
@@ -140,66 +257,20 @@ const [totalDistance, setTotalDistance] = useState(0);
     };
   }, []);
 
-  // 🧠 Directions API
-  const getRoute = async (origin: LatLng, destination: LatLng) => {
-    try {
-      const url = `https://maps.googleapis.com/maps/api/directions/json?origin=${origin.latitude},${origin.longitude}&destination=${destination.latitude},${destination.longitude}&key=${API_KEY}`;
-
-      const res = await fetch(url);
-      const data = await res.json();
-
-      if (data.routes.length) {
-        const points = decodePolyline(data.routes[0].overview_polyline.points);
-        setRouteCoords(points);
-      }
-    } catch (e) {
-      console.log(e);
-    }
-  };
-
-  // 🔓 Decode polyline
-  const decodePolyline = (t: string): LatLng[] => {
-    let points: LatLng[] = [];
-    let index = 0,
-      lat = 0,
-      lng = 0;
-
-    while (index < t.length) {
-      let b,
-        shift = 0,
-        result = 0;
-
-      do {
-        b = t.charCodeAt(index++) - 63;
-        result |= (b & 0x1f) << shift;
-        shift += 5;
-      } while (b >= 0x20);
-
-      let dlat = result & 1 ? ~(result >> 1) : result >> 1;
-      lat += dlat;
-
-      shift = 0;
-      result = 0;
-
-      do {
-        b = t.charCodeAt(index++) - 63;
-        result |= (b & 0x1f) << shift;
-        shift += 5;
-      } while (b >= 0x20);
-
-      let dlng = result & 1 ? ~(result >> 1) : result >> 1;
-      lng += dlng;
-
-      points.push({
-        latitude: lat / 1e5,
-        longitude: lng / 1e5,
-      });
+  useEffect(() => {
+    if (!location || !mapReady || !mapRef.current) {
+      return;
     }
 
-    return points;
-  };
+    mapRef.current.animateToRegion(
+      {
+        ...location,
+        ...MAP_REGION_DELTA,
+      },
+      500,
+    );
+  }, [location, mapReady]);
 
-  // 📍 Open Google Maps
   const openGoogleMaps = () => {
     if (!location) {
       Alert.alert(
@@ -239,6 +310,10 @@ const [totalDistance, setTotalDistance] = useState(0);
   }
 
   const currentLocation = location as LatLng;
+  const mapRegion = {
+    ...currentLocation,
+    ...MAP_REGION_DELTA,
+  };
 
   const handleStart = async () => {
     if (!currentLocation) {
@@ -315,16 +390,19 @@ const [totalDistance, setTotalDistance] = useState(0);
 );
   };
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: color.white }}>
+    <SafeAreaView style={styles.safeArea}>
       <MapView
-        style={{ flex: 1 }}
+        ref={mapRef}
+        style={styles.map}
+        provider={Platform.OS === 'android' ? PROVIDER_GOOGLE : undefined}
+        googleRenderer={Platform.OS === 'android' ? 'LEGACY' : undefined}
+        mapType="standard"
+        userInterfaceStyle="light"
+        loadingEnabled={true}
         showsUserLocation={true}
-        region={{
-          latitude: currentLocation.latitude,
-          longitude: currentLocation.longitude,
-          latitudeDelta: 0.01,
-          longitudeDelta: 0.01,
-        }}
+        showsMyLocationButton={true}
+        initialRegion={mapRegion}
+        onMapReady={() => setMapReady(true)}
       >
         {/* User */}
         <Marker coordinate={currentLocation} pinColor="green" />
@@ -372,7 +450,7 @@ const [totalDistance, setTotalDistance] = useState(0);
 
       <View style={styles.bottom}>
         <Text style={styles.text}>
-          Distance: {Math.round(distance)} m ({(distance / 1000).toFixed(2)} km)
+          Route Distance: {Math.round(distance)} m ({(distance / 1000).toFixed(2)} km)
         </Text>
         {!startLocation ? (
           <CustomButton
@@ -412,9 +490,16 @@ const [totalDistance, setTotalDistance] = useState(0);
 };
 
 const styles = StyleSheet.create({
+  safeArea: {
+    flex: 1,
+    backgroundColor: color.white,
+  },
+  map: {
+    flex: 1,
+  },
   bottom: {
     position: 'absolute',
-    bottom: 40,
+    bottom: 0,
     width: '100%',
     backgroundColor: 'white',
     padding: 15,

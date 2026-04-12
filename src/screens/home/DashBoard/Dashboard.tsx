@@ -9,9 +9,9 @@ const Dashboard = () => {
     <View style={styles.container}>
       <Headers title="Dashboard" showBack={false} />
       <Image
-                source={require('../../../assets/images/logo/dashboardd.png')}
-                style={{ height: '100%', width: '100%', resizeMode: 'contain' }}
-              />
+        source={require('../../../assets/images/logo/dashboardd.png')}
+        style={{ height: '100%', width: '100%', resizeMode: 'contain' }}
+      />
       <View style={styles.buttonView}>
         <CustomButton
           text="Start"
@@ -19,8 +19,7 @@ const Dashboard = () => {
           width={'100%'}
           paddingVertical={0}
           onPress={() => {
-
-            navigationService.navigate(routes.Tracking)
+            navigationService.navigate(routes.Tracking);
           }}
           borderRadius={10}
         />

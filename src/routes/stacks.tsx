@@ -104,7 +104,7 @@ export const TAB_STACK = () => (
     style={{ flex: 1, backgroundColor: color.white }}
     edges={['top','bottom']}
   >
-      <StatusBar barStyle="dark-content" backgroundColor={color.primary} translucent={false} />
+      <StatusBar barStyle="lite-content" backgroundColor={color.primary} translucent={false} />
 
     <Tab.Navigator
       initialRouteName={'Dashboard'}
